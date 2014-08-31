@@ -13,7 +13,7 @@ License: BSD 3-Clause
 Required Dependencies: None
 Optional Dependencies: None
 
-Version: 1.0
+Version: 1.1
 
 .DESCRIPTION
 This script is used to discover Microsoft SQL servers in the Active Directory Forest.
@@ -23,6 +23,8 @@ Currently, the script performs the following actions:
     * Queries a Global Catalog in the Active Directory root domain for all Microsoft SQL SPNs in the forest
     * Displays the Microsoft SQL server FQDNs ports and instances
     * Also displays additional computer information if ExtendedInfo is enabled.
+
+REQUIRES: Active Directory user authentication. Standard user access is fine - admin access is not necessary.
 
 .PARAMETER ExtendedInfo
 Switch: Displays additional information including Operating System, Last Bootup Time (derived from LastLogonTimeStamp), OS Version, and Description.
@@ -138,6 +140,7 @@ ForEach ($AllADSQLServerSPNsItem in $AllADSQLServerSPNs)
 Write-Verbose "Loop through the discovered MS SQL SPNs and build the report " 
 ###
 $ALLSQLServerReport = $NULL
+$AllMSSQLServerFQDNs = $NULL
 ForEach ($AllMSSQLSPNsItem in $AllMSSQLSPNHashTable.GetEnumerator())
     {
         $AllMSSQLSPNsItemServerDomainName = $NULL
@@ -184,27 +187,31 @@ ForEach ($AllMSSQLSPNsItem in $AllMSSQLSPNHashTable.GetEnumerator())
 
                 IF ($ExtendedInfo -eq $True)
                     {
-                        $ADComputerSearch = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
-                        $ADComputerSearch.SearchRoot = $AllMSSQLSPNsItemServerDomainLDAPDN
-                        $ADComputerSearch.PageSize = 500
-                        $ADComputerSearch.Filter = "(&(objectCategory=Computer)(name=$AllMSSQLSPNsItemServerName))"
-                        $ComputerADInfo = $ADComputerSearch.FindAll()
+                        TRY
+                            {
+                                $ADComputerSearch = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
+                                $ADComputerSearch.SearchRoot = $AllMSSQLSPNsItemServerDomainLDAPDN
+                                $ADComputerSearch.PageSize = 500
+                                $ADComputerSearch.Filter = "(&(objectCategory=Computer)(name=$AllMSSQLSPNsItemServerName))"
+                                $ComputerADInfo = $ADComputerSearch.FindAll()
                         
-                        [string]$ComputerADDescription = ($ComputerADInfo.properties.description)
-                        [string]$ComputerADInfoOperatingSystem = ($ComputerADInfo.properties.operatingsystem)
-                        [string]$ComputerADInfoOperatingSystemServicePack = ($ComputerADInfo.properties.operatingsystemservicepack)
-                        [string]$ComputerADInfoOperatingSystemVersion = ($ComputerADInfo.properties.operatingsystemversion)
+                                [string]$ComputerADDescription = ($ComputerADInfo.properties.description)
+                                [string]$ComputerADInfoOperatingSystem = ($ComputerADInfo.properties.operatingsystem)
+                                [string]$ComputerADInfoOperatingSystemServicePack = ($ComputerADInfo.properties.operatingsystemservicepack)
+                                [string]$ComputerADInfoOperatingSystemVersion = ($ComputerADInfo.properties.operatingsystemversion)
 
-                        [string]$ComputerADInfoLastLogonTimestamp = ($ComputerADInfo.properties.lastlogontimestamp)
-                        TRY { [datetime]$ComputerADInfoLLT = [datetime]::FromFileTime($ComputerADInfoLastLogonTimestamp) }
-                            CATCH { }
+                                [string]$ComputerADInfoLastLogonTimestamp = ($ComputerADInfo.properties.lastlogontimestamp)
+                                TRY { [datetime]$ComputerADInfoLLT = [datetime]::FromFileTime($ComputerADInfoLastLogonTimestamp) }
+                                    CATCH { }
                         
-                        $SQLServerReport | Add-Member -MemberType NoteProperty -Name OperatingSystem -Value $ComputerADInfoOperatingSystem 
-                        $SQLServerReport | Add-Member -MemberType NoteProperty -Name OSServicePack -Value $ComputerADInfoOperatingSystemServicePack 
-                        $SQLServerReport | Add-Member -MemberType NoteProperty -Name LastBootup -Value $ComputerADInfoLLT  
-                        $SQLServerReport | Add-Member -MemberType NoteProperty -Name OSVersion -Value $ComputerADInfoOperatingSystemVersion 
-                        $SQLServerReport | Add-Member -MemberType NoteProperty -Name Description -Value $ComputerADDescription
-                    }
+                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name OperatingSystem -Value $ComputerADInfoOperatingSystem 
+                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name OSServicePack -Value $ComputerADInfoOperatingSystemServicePack 
+                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name LastBootup -Value $ComputerADInfoLLT  
+                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name OSVersion -Value $ComputerADInfoOperatingSystemVersion 
+                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name Description -Value $ComputerADDescription
+                            }
+                        CATCH { Write-Warning "Unable to gather properties for computer $AllMSSQLSPNsItemServerName" } 
+                   }
 
                 [array]$ALLSQLServerReport += $SQLServerReport
             }
