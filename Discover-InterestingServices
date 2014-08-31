@@ -1,0 +1,426 @@
+function Discover-InterestingServices
+{
+
+<#
+.SYNOPSIS
+This script is used to discover network servers with interesting services without port scanning.
+Service discovery in the Active Directory Forest is performed by querying an Active Directory Gloabl Catalog via LDAP.
+The script can also provide additional computer information such as OS and last bootup time.
+
+PowerSploit Function: DDiscover-InterestingServices.ps1
+Author: Sean Metcalf, Twitter: @PyroTek3
+License: BSD 3-Clause
+Required Dependencies: None
+Optional Dependencies: None
+
+Version: 1.0
+
+.DESCRIPTION
+This script is used to discover network servers with interesting services without port scanning.
+Service discovery in the Active Directory Forest is performed by querying an Active Directory Gloabl Catalog via LDAP.
+The script can also provide additional computer information such as OS and last bootup time.
+
+REQUIRES: Active Directory user authentication. Standard user access is fine - admin access is not necessary.
+
+Currently, the script performs the following actions:
+    * Queries a Global Catalog in the Active Directory root domain for all SPNs in the forest
+    * Identifies interesting services running on computers (if a port is identified in the SPN, it is shown in the report as SPN.port)
+    * Also displays additional computer information if ExtendedInfo is enabled.
+
+A description of SPN Services can be found here:
+http://blog.metcorp.org/?page_id=183 
+
+.PARAMETER ExtendedInfo
+Switch: Displays additional information including OS Version & OS (short name) in standard report.
+When using the ServiceSearch parameter, displays additional information including Operating System, Last Bootup Time (derived from LastLogonTimeStamp), OS Version, and Description.
+Operating system properties are populated at first bot-up after joining the domain. 
+
+.PARAMETER ShowSPNTypes
+Switch: Diplay a list of all SPN types in the AD Forest.
+
+.PARAMETER StandardSPNServiceFilter
+Array of Strings: Standard list of SPN Services Reported: "AGPM","DNS","ADAM","Exchange","GC","http","IMAP","kadmin","ldap","MSServerCluster","MSSQL","sip","SMTP","tapinego","TERMSRV","WSMAN"
+It is best to remove from this list. Use the OptionalSPNServiceFilter parameter for adding SPN Services to the report.
+
+.PARAMETER OptionalSPNServiceFilter
+Array of Strings: Provide additonal SPN service types desired in the report.
+Multiple values are acceptable.
+
+.PARAMETER ServiceSearch
+Array of Strings: This parameter enables searching across all SPN types and will return a table of results.
+Multiple values are acceptable.
+
+.PARAMETER DisplayServerSPNs
+Switch: Diplay a report of servers with their SPNs (determined by StandardSPNServiceFilter & OptionalSPNServiceFilter.
+Enabled by default.
+
+.PARAMETER DisplaySPNServers
+Switch: Diplay a list of all SPN types in the AD Forest with the servers registered with that service in AD.
+
+.EXAMPLE
+Discover-InterestingServices
+Perform discovery on servers running interesting services via AD and displays the results in a table.
+
+Discover-InterestingServices -DisplayServerSPNs
+Perform discovery on servers running interesting services via AD and displays the results in a table.
+Default option.
+
+Discover-InterestingServices -ExtendedInfo
+Perform discovery on servers running interesting services via AD and displays the results in a table.
+Displays additional information including OS Version & OS (short name) in standard report.
+
+Discover-InterestingServices -ShowSPNTypes
+Perform discovery on servers running interesting services via AD and displays the results in a table.
+Also shows a list of all SPN types discovered in the AD forest.
+
+Discover-InterestingServices -OptionalSPNServiceFilter ("Microsoft Virtual Console Service","Dfsr")
+Perform discovery on servers running interesting services (adding Hyper-V hosts and domain DFS servers) via AD and displays the results in a table.
+
+Discover-InterestingServices -ServiceSearch ("WSMAN","ldap")
+Perform discovery on servers running interesting services via AD and displays the results in a table.
+Also Perform service search for computers hosting WinRM and LDAP in AD and displays the results in a table.
+
+Discover-InterestingServices -ServiceSearch ("WSMAN","ldap") -ExtendedInfo
+Perform discovery on servers running interesting services via AD and displays the results in a table.
+Also Perform service search for computers hosting WinRM and LDAP in AD and displays the results in a table.
+Displays additional information including Operating System, Last Bootup Time (derived from LastLogonTimeStamp), OS Version, and Description.
+
+Discover-InterestingServices -DisplaySPNServers
+Perform discovery on servers running interesting services via AD and displays the results in a table.
+Also displays the list of discovered SPNs in the forest and the registered services.
+
+
+.NOTES
+This script is used to discover network servers with interesting services without port scanning.
+
+.LINK
+
+#>
+Param
+    (
+        [Parameter(Position=0)]
+        [switch] $ExtendedInfo,
+
+        [Parameter(Position=1)]
+        [switch] $ShowSPNTypes,
+
+        [Parameter(Position=2)]
+        [String[]] $StandardSPNServiceFilter = ("AGPM","DNS","ADAM","Exchange","GC","http","IMAP","kadmin","ldap","MSServerCluster","MSSQL","sip","SMTP","tapinego","TERMSRV","WSMAN"),
+
+        [Parameter(Position=3)]
+        [String[]] $OptionalSPNServiceFilter,
+
+        [Parameter(Position=4)]
+        [String[]] $ServiceSearch,
+
+        [Parameter(Position=4)]
+        [switch] $DisplayServerSPNs = $True,
+
+        [Parameter(Position=5)]
+        [switch] $DisplaySPNServers
+   
+    )
+
+[array]$SPNServiceFilter = $StandardSPNServiceFilter + $OptionalSPNServiceFilter
+
+Write-Verbose "Get current Active Directory domain... "
+$ADForestInfo = [System.DirectoryServices.ActiveDirectory.Forest]::GetCurrentForest()
+$ADForestInfoRootDomain = $ADForestInfo.RootDomain
+$ADForestInfoRootDomainArray = $ADForestInfoRootDomain -Split("\.")
+$ADForestInfoRootDomainDN = $Null
+ForEach($ADForestInfoRootDomainArrayItem in $ADForestInfoRootDomainArray)
+    {
+        $ADForestInfoRootDomainDN += "DC=" + $ADForestInfoRootDomainArrayItem + ","     
+    }
+$ADForestInfoRootDomainDN = $ADForestInfoRootDomainDN.Substring(0,$ADForestInfoRootDomainDN.Length-1)
+
+$ADDomainInfoLGCDN = 'GC://' + $ADForestInfoRootDomainDN
+
+Write-Verbose "Discovering Interesting Services in the AD Forest $ADForestInfoRootDomainDN "
+$root = [ADSI]$ADDomainInfoLGCDN 
+$ADSearcher = new-Object System.DirectoryServices.DirectorySearcher($root,"(serviceprincipalname=*)") 
+$ADSearcher.PageSize = 500
+$AllForestSPNs = $ADSearcher.FindAll() 
+
+$AllForestSPNsCount = $AllForestSPNs.Count
+Write-Output "Processing $AllForestSPNsCount accounts with Service SPNs discovered in AD Forest $ADForestInfoRootDomainDN `r "
+
+$AllInterestingSPNs = $NULL
+$AllSPNs = $NULL
+$AllSPNTypes = $NULL
+$AllInterestingSPNHashTable =@{}
+$AllInterestingSPNReverseHashTable =@{}
+ForEach ($AllForestSPNsItem in $AllForestSPNs)
+    {
+        $AllForestSPNsItemPath = $AllForestSPNsItem.Path
+        Write-Verbose "Reviewing SPN for $AllForestSPNsItemPath "
+        $AllForestSPNsItemDomainName = $NULL
+        [array]$AllForestSPNsItemArray = $AllForestSPNsItem.Path -Split(",DC=")
+        [int]$DomainNameFECount = 0
+        ForEach ($AllForestSPNsItemArrayItem in $AllForestSPNsItemArray)
+            {
+                IF ($DomainNameFECount -gt 0)
+                { [string]$AllForestSPNsItemDomainName += $AllForestSPNsItemArrayItem + "." }
+                $DomainNameFECount++
+            }
+        $AllForestSPNsItemDomainName = $AllForestSPNsItemDomainName.Substring(0,$AllForestSPNsItemDomainName.Length-1)
+
+        ForEach ($FSPNItemSPNItem in $AllForestSPNsItem.properties.serviceprincipalname)
+            {
+                Write-Verbose "Reviewing SPN Data: $FSPNItemSPNItem " 
+                [string]$FSPNItemSPNItemSPNType = ( $FSPNItemSPNItem -Split("/") )[0]
+                [array]$AllSPNTypes += ( $FSPNItemSPNItem -Split("/") )[0]
+
+                IF ( ($FSPNItemSPNItemSPNType -like "*kadmin*") -AND ($AllForestSPNsItem -like "*krbtgt*") )
+                    { 
+                        $AllInterestingSPNHashTable.Set_Item("krbtgt ($AllForestSPNsItemDomainName)",$FSPNItemSPNItem) 
+                        $AllInterestingSPNReverseHashTableData = $AllInterestingSPNReverseHashTable.Get_Item($FSPNItemSPNItem)
+                        IF ($AllInterestingSPNReverseHashTableData)
+                            {
+                                $AllInterestingSPNReverseHashTableDataUpdate = $AllInterestingSPNReverseHashTableData + ";" + "krbtgt ($AllForestSPNsItemDomainName)" 
+                                $AllInterestingSPNReverseHashTable.Set_Item($FSPNItemSPNItem,$AllInterestingSPNReverseHashTableDataUpdate)
+                            }
+                        IF (!$AllInterestingSPNReverseHashTableData)
+                            { $AllInterestingSPNReverseHashTable.Set_Item($FSPNItemSPNItem,"krbtgt ($AllForestSPNsItemDomainName)") }
+                    }
+                 ELSE
+                    {
+                        $FSPNItemSPNItemServerFQDN = ( ( ( $FSPNItemSPNItem -Split("/") )[1] )-Split(":") )[0]
+                        IF ($FSPNItemSPNItemServerFQDN -notlike "*$AllForestSPNsItemDomainName*" )
+                            { $FSPNItemSPNItemServerFQDN = $FSPNItemSPNItemServerFQDN + "." + $AllForestSPNsItemDomainName }
+                        [string]$FSPNItemSPNItemServerPort = ( ( ( $FSPNItemSPNItem -Split("/") )[1] )-Split(":") )[1]
+
+                        $AllInterestingSPNReverseHashTableData = $AllInterestingSPNReverseHashTable.Get_Item($FSPNItemSPNItemSPNType)
+                        IF ( ($AllInterestingSPNReverseHashTableData) -AND ($AllInterestingSPNReverseHashTableData -notlike "*$FSPNItemSPNItemServerFQDN*") )
+                            {
+                                $AllInterestingSPNReverseHashTableDataUpdate = $AllInterestingSPNReverseHashTableData + ";" + $FSPNItemSPNItemServerFQDN 
+                                $AllInterestingSPNReverseHashTable.Set_Item($FSPNItemSPNItemSPNType,$AllInterestingSPNReverseHashTableDataUpdate)
+                            }
+                        IF (!$AllInterestingSPNReverseHashTableData)
+                            { $AllInterestingSPNReverseHashTable.Set_Item($FSPNItemSPNItemSPNType,$FSPNItemSPNItemServerFQDN) } 
+
+                        IF ( ($FSPNItemSPNItemServerPort) -AND ($FSPNItemSPNItemServerPort -match "^[\d\.]+$") )
+                            { $FSPNItemSPNItemSPNType = $FSPNItemSPNItemSPNType + "." + $FSPNItemSPNItemServerPort }
+
+                        ForEach ($SPNServiceFilterItem in $SPNServiceFilter)
+                            {
+                                IF ($FSPNItemSPNItemSPNType -like "*$SPNServiceFilterItem*")
+                                    { 
+                                        Write-Verbose "SPNServiceFilterItem is $SPNServiceFilterItem "
+                                        $AllInterestingSPNsData = $AllInterestingSPNHashTable.Get_Item($FSPNItemSPNItemServerFQDN)
+                                        IF ( ($AllInterestingSPNsData) -AND ($AllInterestingSPNsData -notlike "*$SPNServiceFilterItem*") )
+                                            {
+                                                $AllInterestingSPNsDataUpdate = $AllInterestingSPNsData + ";" + $FSPNItemSPNItemSPNType
+                                                $AllInterestingSPNHashTable.Set_Item($FSPNItemSPNItemServerFQDN,$AllInterestingSPNsDataUpdate) 
+                                                Write-Verbose "Updating AllInterestingSPNHashTable with $FSPNItemSPNItemServerFQDN : $AllInterestingSPNsDataUpdate " 
+                                            }
+                                        IF (!$AllInterestingSPNsData) 
+                                            { 
+                                                $AllInterestingSPNHashTable.Set_Item($FSPNItemSPNItemServerFQDN,$FSPNItemSPNItemSPNType) 
+                                                Write-Verbose "Updating AllInterestingSPNHashTable with new data $FSPNItemSPNItemServerFQDN : $FSPNItemSPNItemSPNType " 
+                                            }    
+                                    }
+                            }
+                    }
+            }
+    }
+
+IF ($DisplayServerSPNs -eq $True)
+    { $AllInterestingSPNHashTable.GetEnumerator() | sort-object Name }
+
+Write-Output ""
+
+IF ($DisplaySPNServers -eq $True)
+    { $AllInterestingSPNReverseHashTable.GetEnumerator() | sort-object Name }
+
+Write-Output ""
+
+IF ($ExtendedInfo -eq $True)
+    {
+        $ALLIntServerServicesReport = $NULL
+        
+        ForEach ($AllInterestingSPNHashTableItem in $AllInterestingSPNHashTable.GetEnumerator() )
+            {
+                $AllServerInterstingSPNServiceList = $NULL
+                $AllInterestingSPNHashTableItemServerDomainName = $NULL
+                $AllInterestingSPNHashTableItemServerDomainDN = $NULL
+
+                $AllInterestingSPNHashTableItemServerFQDN =  $AllInterestingSPNHashTableItem.Name
+                [array]$AllServerInterstingSPNArray = ($AllInterestingSPNHashTableItem.Value) -split(";")
+                [array]$AllServerInterstingSPNArraySorted = $AllServerInterstingSPNArray | sort-Object
+
+                ForEach ($AllServerInterstingSPNArraySortedItem in $AllServerInterstingSPNArraySorted)
+                    { [string]$AllServerInterstingSPNServiceList += $AllServerInterstingSPNArraySortedItem + ";" }
+                $AllServerInterstingSPNServiceList = $AllServerInterstingSPNServiceList.Substring(0,$AllServerInterstingSPNServiceList.Length-1)
+
+                $AllInterestingSPNHashTableItemServerFQDNArray = $AllInterestingSPNHashTableItemServerFQDN -Split('\.')
+                [int]$FQDNArrayFECount = 0
+                ForEach ($AllInterestingSPNHashTableItemServerFQDNArrayItem in $AllInterestingSPNHashTableItemServerFQDNArray)
+                    {
+                        IF ($FQDNArrayFECount -ge 1)
+                            { 
+                                [string]$AllInterestingSPNHashTableItemServerDomainName += $AllInterestingSPNHashTableItemServerFQDNArrayItem + "." 
+                                [string]$AllInterestingSPNHashTableItemServerDomainDN += "DC=" + $AllInterestingSPNHashTableItemServerFQDNArrayItem + "," 
+                            }
+                        $FQDNArrayFECount++
+                    }
+
+                $AllInterestingSPNHashTableItemServerDomainName = $AllInterestingSPNHashTableItemServerDomainName.Substring(0,$AllInterestingSPNHashTableItemServerDomainName.Length-1)
+                $AllInterestingSPNHashTableItemServerDomainDN = $AllInterestingSPNHashTableItemServerDomainDN.Substring(0,$AllInterestingSPNHashTableItemServerDomainDN.Length-1)
+                $AllInterestingSPNHashTableItemServerDomainLDAPDN = "LDAP://$AllInterestingSPNHashTableItemServerDomainDN"
+
+                $AllInterestingSPNHashTableItemServerName = $AllInterestingSPNHashTableItemServerFQDN -Replace(("."+$AllInterestingSPNHashTableItemServerDomainName),"")
+
+                IF ($AllInterestingSPNHashTableItemServerFQDN -like "*changepw*") 
+                    { $AllInterestingSPNHashTableItemServerFQDN = $AllInterestingSPNHashTableItemServerDomainName + "\krbgt" }
+
+                IF ($AllInterestingSPNHashTableItemServerFQDN -like "*_msdcs*")
+                    { 
+                        $AllInterestingSPNHashTableItemServerFQDN = $AllInterestingSPNHashTableItemServerDomainName + "\DNSzone" 
+                        $AllInterestingSPNHashTableItemServerName = $NULL 
+                    } 
+
+                TRY
+                    {
+                        $ADComputerSearch = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
+                        $ADComputerSearch.SearchRoot = $AllInterestingSPNHashTableItemServerDomainLDAPDN
+                        $ADComputerSearch.PageSize = 500
+                        $ADComputerSearch.Filter = "(&(objectCategory=Computer)(name=$AllInterestingSPNHashTableItemServerName))"
+                        $ComputerADInfo = $ADComputerSearch.FindAll()
+                        
+                        [string]$ComputerADDescription = ($ComputerADInfo.properties.description)
+                        [string]$ComputerADInfoOperatingSystem = ($ComputerADInfo.properties.operatingsystem)
+                        [string]$ComputerADInfoOperatingSystemServicePack = ($ComputerADInfo.properties.operatingsystemservicepack)
+                        [string]$ComputerADInfoOperatingSystemVersion = ($ComputerADInfo.properties.operatingsystemversion)
+
+                        [string]$ComputerADInfoLastLogonTimestamp = ($ComputerADInfo.properties.lastlogontimestamp)
+                        TRY { [datetime]$ComputerADInfoLLT = [datetime]::FromFileTime($ComputerADInfoLastLogonTimestamp) }
+                            CATCH { }
+                    }
+                  CATCH
+                    { Write-Warning "Unable to gather property data for computer $AllInterestingSPNHashTableItemServerName " }
+                
+                $ComputerADInfoShortOS = $Null
+                $ComputerADInfoShortOSArray = $ComputerADInfoOperatingSystem -split(" ")
+                ForEach ($ComputerADInfoShortOSArrayItem in $ComputerADInfoShortOSArray ) 
+                    {
+                        IF ($ComputerADInfoShortOSArrayItem -eq "Windows")
+                            { [string] $ComputerADInfoShortOS += "Win" }
+                                
+                        IF ($ComputerADInfoShortOSArrayItem -eq "Server")
+                            { }
+
+                        IF ($ComputerADInfoShortOSArrayItem -match "\d")
+                            { [string] $ComputerADInfoShortOS += $ComputerADInfoShortOSArrayItem }  
+                    }
+
+                $IntServerServicesReport = New-Object -TypeName PSObject 
+                # $IntServerServicesReport | Add-Member -MemberType NoteProperty -Name Domain -Value $AllInterestingSPNHashTableItemServerDomainName
+                $IntServerServicesReport | Add-Member -MemberType NoteProperty -Name ServerName -Value $AllInterestingSPNHashTableItemServerFQDN   
+                $IntServerServicesReport | Add-Member -MemberType NoteProperty -Name SPNServices -Value $AllServerInterstingSPNServiceList     
+                # $IntServerServicesReport | Add-Member -MemberType NoteProperty -Name OperatingSystem -Value $ComputerADInfoOperatingSystem 
+                # $IntServerServicesReport | Add-Member -MemberType NoteProperty -Name OSServicePack -Value $ComputerADInfoOperatingSystemServicePack 
+                # $IntServerServicesReport | Add-Member -MemberType NoteProperty -Name LastBootup -Value $ComputerADInfoLLT  
+                $IntServerServicesReport | Add-Member -MemberType NoteProperty -Name OSVersion -Value $ComputerADInfoOperatingSystemVersion 
+                #$IntServerServicesReport | Add-Member -MemberType NoteProperty -Name Description -Value $ComputerADDescription
+                $IntServerServicesReport | Add-Member -MemberType NoteProperty -Name OS -Value $ComputerADInfoShortOS
+
+                [array]$ALLIntServerServicesReport += $IntServerServicesReport
+            }
+
+        $ALLIntServerServicesReport  | sort-object ServerName |  Format-Table -AutoSize
+    }
+
+$AllSPNTypes = $AllSPNTypes | sort-object -Unique
+$AllSPNTypesCount = $AllSPNTypes.Count
+Write-Output "Discovered $AllSPNTypesCount different SPNs in the AD Forest "
+IF ($ShowSPNTypes -eq $TRue)
+    { $AllSPNTypes }
+
+IF ($ServiceSearch)
+    {
+        $AllSPNServerReport = $Null
+        ForEach ($ServiceSearchItem in $ServiceSearch)
+            {
+                [array]$SPNServiceServerArray = ($AllInterestingSPNReverseHashTable.Get_Item($ServiceSearchItem)) -split(";")
+                $SPNServiceServerArray = $SPNServiceServerArray  | sort-object
+
+                IF ($ExtendedInfo -eq $True)
+                    {
+                        ForEach ($SPNServiceServerArrayItem in $SPNServiceServerArray)
+                            {
+                                $SPNServiceServerArrayItemDomainName = $Null
+                                $SPNServiceServerArrayItemDomainDN = $Null
+                                $ComputerADInfoOperatingSystem = $Null 
+                                $ComputerADInfoOperatingSystemServicePack = $Null 
+                                #$ComputerADInfoLLT  
+                                $ComputerADInfoOperatingSystemVersion = $Null 
+                                $ComputerADDescription = $Null
+
+                                $SPNServiceServerArrayItemServerFQDNArray = $SPNServiceServerArrayItem -Split('\.')
+                                [int]$FQDNArrayFECount = 0
+                                ForEach ($SPNServiceServerArrayItemServerFQDNArrayItem in $SPNServiceServerArrayItemServerFQDNArray)
+                                    {
+                                        IF ($FQDNArrayFECount -ge 1)
+                                            { 
+                                                [string]$SPNServiceServerArrayItemDomainName += $SPNServiceServerArrayItemServerFQDNArrayItem + "." 
+                                                [string]$SPNServiceServerArrayItemDomainDN += "DC=" + $SPNServiceServerArrayItemServerFQDNArrayItem + "," 
+                                            }
+                                        $FQDNArrayFECount++
+                                    }
+
+                                $SPNServiceServerArrayItemDomainName = $SPNServiceServerArrayItemDomainName.Substring(0,$SPNServiceServerArrayItemDomainName.Length-1)
+                                $SPNServiceServerArrayItemDomainDN = $SPNServiceServerArrayItemDomainDN.Substring(0,$SPNServiceServerArrayItemDomainDN.Length-1)
+                                $SPNServiceServerArrayItemDomainLDAPDN = "LDAP://$SPNServiceServerArrayItemDomainDN"
+
+                                $SPNServiceServerArrayItemServerName = $SPNServiceServerArrayItemServerFQDNArray[0]
+
+                                $SPNServerReport = New-Object -TypeName PSObject 
+                                $SPNServerReport | Add-Member -MemberType NoteProperty -Name ServerName -Value $SPNServiceServerArrayItem 
+                                $SPNServerReport | Add-Member -MemberType NoteProperty -Name ServiceSPN -Value $ServiceSearchItem 
+                                
+                                TRY 
+                                    {
+                                        $ADComputerSearch = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
+                                        $ADComputerSearch.SearchRoot = $SPNServiceServerArrayItemDomainLDAPDN
+                                        $ADComputerSearch.PageSize = 500
+                                        $ADComputerSearch.Filter = "(&(objectCategory=Computer)(name=$SPNServiceServerArrayItemServerName))"
+                                        $ComputerADInfo = $ADComputerSearch.FindAll()
+
+                                        [string]$ComputerADDescription = ($ComputerADInfo.properties.description)
+                                        [string]$ComputerADInfoOperatingSystem = ($ComputerADInfo.properties.operatingsystem)
+                                        [string]$ComputerADInfoOperatingSystemServicePack = ($ComputerADInfo.properties.operatingsystemservicepack)
+                                        [string]$ComputerADInfoOperatingSystemVersion = ($ComputerADInfo.properties.operatingsystemversion)
+
+                                        [string]$ComputerADInfoLastLogonTimestamp = ($ComputerADInfo.properties.lastlogontimestamp)
+
+                                        $SPNServerReport | Add-Member -MemberType NoteProperty -Name OperatingSystem -Value $ComputerADInfoOperatingSystem 
+                                        $SPNServerReport | Add-Member -MemberType NoteProperty -Name OSServicePack -Value $ComputerADInfoOperatingSystemServicePack 
+                                        $SPNServerReport | Add-Member -MemberType NoteProperty -Name LastBootup -Value $ComputerADInfoLLT  
+                                        $SPNServerReport | Add-Member -MemberType NoteProperty -Name OSVersion -Value $ComputerADInfoOperatingSystemVersion 
+                                        $SPNServerReport | Add-Member -MemberType NoteProperty -Name Description -Value $ComputerADDescription
+                                    }
+                                 CATCH
+                                    { Write-Warning "An error ocurred while looking up data for computer $SPNServiceServerArrayItemServerName in $SPNServiceServerArrayItemDomainDN " }
+
+                                TRY { [datetime]$ComputerADInfoLLT = [datetime]::FromFileTime($ComputerADInfoLastLogonTimestamp) }
+                                    CATCH { }
+
+                                [array]$AllSPNServerReport += $SPNServerReport
+                            }
+                    }
+                ELSE
+                    { 
+                        Write-Output "The following computers in AD have registered the SPN for $ServiceSearchItem :"
+                        $SPNServiceServerArray
+                    } 
+                Write-Output ""
+            }
+                            
+        IF ($ExtendedInfo -eq $True)
+            {
+                $AllSPNServerReport | format-table -auto
+            }
+    }
+
+} 
