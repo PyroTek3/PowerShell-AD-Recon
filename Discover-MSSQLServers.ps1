@@ -5,7 +5,7 @@ function Discover-MSSQLServers.ps1
 .SYNOPSIS
 This script is used to discover Microsoft SQL servers without port scanning.
 SQL discovery in the Active Directory Forest is performed by querying an Active Directory Gloabl Catalog via LDAP.
-The script can also provide additional compuer information such as OS and last bootup time.
+The script can also provide additional computer information such as OS and last bootup time.
 
 PowerSploit Function: Discover-MSSQLServers.ps1
 Author: Sean Metcalf, Twitter: @PyroTek3
@@ -17,7 +17,7 @@ Version: 1.0
 
 .DESCRIPTION
 This script is used to discover Microsoft SQL servers in the Active Directory Forest.
-The script can also provide additional compuer information such as OS and last bootup time.
+The script can also provide additional computer information such as OS and last bootup time.
 
 Currently, the script performs the following actions:
     * Queries a Global Catalog in the Active Directory root domain for all Microsoft SQL SPNs in the forest
@@ -52,7 +52,7 @@ Discover-MSSQLServers -SortResults "Port"
 Perform Microsoft SQL Server discovery via AD and displays the results in a table sorted by Port.
 
 .NOTES
-This script is used to discover Microsoft SQL servers in the Active Directory Forest and can also provide additional compuer information such as OS and last bootup time.
+This script is used to discover Microsoft SQL servers in the Active Directory Forest and can also provide additional computer information such as OS and last bootup time.
 
 .LINK
 
@@ -92,7 +92,7 @@ $AllADSQLServerSPNs = $ADSearcher.FindAll()
 
 $AllADSQLServerSPNsCount = $AllADSQLServerSPNs.Count
 
-Write-Output "Processing $AllADSQLServerSPNsCount accounts with MS SQL SPNs discovered in AD Forest $ADForestInfoRootDomainDN `r "
+Write-Output "Processing $AllADSQLServerSPNsCount (user and computer) accounts with MS SQL SPNs discovered in AD Forest $ADForestInfoRootDomainDN `r "
 
 $AllMSSQLSPNs = $NULL
 $AllMSSQLSPNHashTable =@{}
