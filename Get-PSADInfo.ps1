@@ -11,7 +11,7 @@ License: BSD 3-Clause
 Required Dependencies: None
 Optional Dependencies: None
 
-Version: 0.3
+Version: 0.31
 
 .DESCRIPTION
 This script is used to gather information on the Active Directory environment.
@@ -28,6 +28,7 @@ Currently, the script performs the following actions:
         - Domain krbtgt Last Password Set Date
         - Domain FSMOs
         - Domain Password Policy
+        - Domain Trust Info
         - Child Domains
         - Domain Service Accounts, inlcudes AccountName, DisplayName, PwdLastSet,LastLogon,Description
     * Identifies AD & Exchange schema versions
@@ -172,6 +173,69 @@ ForEach ($ADForestDomainsItem in $ADForestDomains)
         $ADSISearcher.Filter = "(nCName=$ADForestDomainsDN)" 
         $ADForestDomainsItemNetBIOSName = ($ADSISearcher.FindOne()).Properties.Item("nETBIOSName") 
 
+        ## Find Trust Objects
+        $ADTDOSearch = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
+        $ADTDOSearch.SearchRoot = "LDAP://$ADForestDomainsDN"
+        $ADTDOSearch.PageSize = 500
+        $ADTDOSearch.Filter = "(ObjectClass=trustedDomain)"
+        $ADTrustArray = $ADTDOSearch.FindAll()
+
+        $AllADDomainTrustReport = $Null
+        ForEach ($ADTrustArrayItem in $ADTrustArray)
+            {
+                $ADTrustArrayItemname = $ADTrustArrayItem.Properties.name
+                $ADTrustArrayItemwhencreated = $ADTrustArrayItem.Properties.whencreated
+                $ADTrustArrayIteminstancetype = $ADTrustArrayItem.Properties.instancetype
+                $ADTrustArrayItemtrustdirection = $ADTrustArrayItem.Properties.trustdirection
+                $ADTrustArrayItemtrustattributes = $ADTrustArrayItem.Properties.trustattributes
+                $ADTrustArrayItemwhenchanged = $ADTrustArrayItem.Properties.whenchanged
+                $ADTrustArrayItemtrustpartner = $ADTrustArrayItem.Properties.trustpartner
+                $ADTrustArrayItemtrusttype = $ADTrustArrayItem.Properties.trusttype
+
+                SWITCH ($ADTrustArrayItemtrusttype)
+                {  ## OPEN SWITCH ($TrustTypeNumber)
+                    1 { $TrustType = "WinNT External"}
+                    2 { $TrustType = "AD Forest/Domain"} # AD parent-child, root domain, shortcut, external, or forest
+                    3 { $TrustType = "Realm Trust"}
+                    4 { $TrustType = "DCE (Theoretical trust type)."} # DCE refers to Open Group's Distributed Computing Environment specification
+                }  ## CLOSE SWITCH ($TrustTypeNumber)
+
+                IF (!$TrustType) { $TrustType = $TrustTypeNumber }
+            
+                SWITCH ($ADTrustArrayItemtrustattributes)
+                    {  ## OPEN SWITCH ($TrustTypeNumber)
+                        1 { $TrustAttributes = "Non-Transitive"}
+                        2 { $TrustAttributes = "Uplevel (Win2k or newer)"}
+                        4 { $TrustAttributes = "Quarantined (External)"}
+                        8 { $TrustAttributes = "Forest Trust"}
+                        10 { $TrustAttributes = "Cross-Org Trust (Selective Auth)"}
+                        20 { $TrustAttributes = "Intra-Forest Trust"}
+                    }  ## CLOSE SWITCH ($TrustTypeNumber)
+            
+                 IF (!$TrustAttributes) { $TrustAttributes = $TrustAttributesNumber }
+            
+                SWITCH ($ADTrustArrayItemtrustdirection)
+                    {  ## OPEN SWITCH ($TrustTypeNumber)
+                        1 { $TrustDirection = "Inbound"}
+                        2 { $TrustDirection = "Outbound"}
+                        3 { $TrustDirection = "Bidirectional"}
+                    }  ## CLOSE SWITCH ($TrustTypeNumber)
+            
+                IF (!$TrustDirection) { $TrustDirection = $TrustDirectionNumber }
+
+                $ADDomainTrustReport = New-Object -TypeName PSObject 
+                $ADDomainTrustReport | Add-Member -MemberType NoteProperty -Name TrustName -Value $ADTrustArrayItemname 
+                $ADDomainTrustReport | Add-Member -MemberType NoteProperty -Name TrustPartner -Value $ADTrustArrayItemtrustpartner
+                $ADDomainTrustReport | Add-Member -MemberType NoteProperty -Name TrustType -Value $TrustType
+                # $ADDomainTrustReport | Add-Member -MemberType NoteProperty -Name instancetype -Value $ADTrustArrayIteminstancetype 
+                $ADDomainTrustReport | Add-Member -MemberType NoteProperty -Name TrustDirection -Value $TrustDirection 
+                $ADDomainTrustReport | Add-Member -MemberType NoteProperty -Name TrustAttributes -Value $TrustAttributes 
+                $ADDomainTrustReport | Add-Member -MemberType NoteProperty -Name Created -Value $ADTrustArrayItemwhencreated 
+                $ADDomainTrustReport | Add-Member -MemberType NoteProperty -Name LastUpdated -Value $ADTrustArrayItemwhenchanged
+
+                [array] $AllADDomainTrustReport += $ADDomainTrustReport
+            }
+
         $ADUserKRBSearch = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
         $ADUserKRBSearch.SearchRoot = "LDAP://$ADForestDomainsDN"
         $ADUserKRBSearch.PageSize = 500
@@ -234,6 +298,10 @@ ForEach ($ADForestDomainsItem in $ADForestDomains)
                 $ADForestDomainsItemChildrenItemName = $ADForestDomainsItemChildrenItem.Name
                 Write-Output "  * $ADForestDomainsItemChildrenItemName"  
             }
+        Write-Output " "
+        Write-Output " Domain Trusts: " 
+        $AllADDomainTrustReport | Format-Table -AutoSize 
+
         Write-Output " "
         Write-Output " Domain Service Accounts (*svc*): " 
         $AllADUServiceAccountReport | Sort-Object PwdLastSet | Format-Table -AutoSize 
@@ -366,6 +434,7 @@ ForEach ($ADSitesItem in $ADSites)
 
         [array]$AllADSiteReport += $ADSiteReport
     }
+
 
 $AllADSiteReport | sort-object SiteName | format-table -AutoSize
 
