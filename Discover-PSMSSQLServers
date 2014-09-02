@@ -1,4 +1,4 @@
-function Discover-MSSQLServers
+function Discover-PSMSSQLServers
 {
 
 <#
@@ -7,7 +7,7 @@ This script is used to discover Microsoft SQL servers without port scanning.
 SQL discovery in the Active Directory Forest is performed by querying an Active Directory Gloabl Catalog via LDAP.
 The script can also provide additional computer information such as OS and last bootup time.
 
-PowerSploit Function: Discover-MSSQLServers
+PowerSploit Function: Discover-PSMSSQLServers
 Author: Sean Metcalf, Twitter: @PyroTek3
 License: BSD 3-Clause
 Required Dependencies: None
@@ -31,10 +31,10 @@ Switch: Displays additional information including Operating System, Last Bootup 
 Operating system properties are populated at first bot-up after joining the domain. 
 
 .EXAMPLE
-Discover-MSSQLServers
+Discover-PSMSSQLServers
 Perform Microsoft SQL Server discovery via AD and displays the results in a table.
 
-Discover-MSSQLServers -ExtendedInfo
+Discover-PSMSSQLServers -ExtendedInfo
 Perform Microsoft SQL Server discovery via AD (includes additional computer information) and displays the results in a table.
 
 .NOTES
