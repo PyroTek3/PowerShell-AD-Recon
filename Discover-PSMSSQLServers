@@ -1,4 +1,4 @@
-function Discover-MSSQLServers.ps1
+function Discover-MSSQLServers
 {
 
 <#
@@ -7,13 +7,13 @@ This script is used to discover Microsoft SQL servers without port scanning.
 SQL discovery in the Active Directory Forest is performed by querying an Active Directory Gloabl Catalog via LDAP.
 The script can also provide additional computer information such as OS and last bootup time.
 
-PowerSploit Function: Discover-MSSQLServers.ps1
+PowerSploit Function: Discover-MSSQLServers
 Author: Sean Metcalf, Twitter: @PyroTek3
 License: BSD 3-Clause
 Required Dependencies: None
 Optional Dependencies: None
 
-Version: 1.1
+Version: 1.5
 
 .DESCRIPTION
 This script is used to discover Microsoft SQL servers in the Active Directory Forest.
@@ -30,28 +30,12 @@ REQUIRES: Active Directory user authentication. Standard user access is fine - a
 Switch: Displays additional information including Operating System, Last Bootup Time (derived from LastLogonTimeStamp), OS Version, and Description.
 Operating system properties are populated at first bot-up after joining the domain. 
 
-.PARAMETER GroupResults
-String: Groups results by provided parameter data. Default is no grouping. 
-Options available by default: "Domain","ServerName","Port","Instance"
-The ExtendedInfo parameter adds the following: "OperatingSystem","OSServicePack","LastBootup","OSVersion","Description"
-
-.PARAMETER SortResults
-String: Sorts results by provided parameter data. Default is "ServerName".
-Options available by default: "Domain","ServerName","Port","Instance"
-The ExtendedInfo parameter adds the following: "OperatingSystem","OSServicePack","LastBootup","OSVersion","Description"
-
 .EXAMPLE
 Discover-MSSQLServers
 Perform Microsoft SQL Server discovery via AD and displays the results in a table.
 
 Discover-MSSQLServers -ExtendedInfo
 Perform Microsoft SQL Server discovery via AD (includes additional computer information) and displays the results in a table.
-
-Discover-MSSQLServers -GroupResults "Domain"
-Perform Microsoft SQL Server discovery via AD and displays the results in a table grouped by Domain.
-
-Discover-MSSQLServers -SortResults "Port"
-Perform Microsoft SQL Server discovery via AD and displays the results in a table sorted by Port.
 
 .NOTES
 This script is used to discover Microsoft SQL servers in the Active Directory Forest and can also provide additional computer information such as OS and last bootup time.
@@ -62,15 +46,7 @@ This script is used to discover Microsoft SQL servers in the Active Directory Fo
 Param
     (
         [Parameter(Position=0)]
-        [switch] $ExtendedInfo = $True,
-
-        [Parameter(Position=1)]
-        [ValidateSet("Domain","ServerName","Port","Instance","OperatingSystem","OSServicePack","LastBootup","OSVersion","Description")]
-        [string] $GroupResults,
-
-        [Parameter(Position=2)]
-        [ValidateSet("Domain","ServerName","Port","Instance","OperatingSystem","OSServicePack","LastBootup","OSVersion","Description")]
-        [string] $SortResults = "ServerName"
+        [switch] $ExtendedInfo = $True
     )
 
 Write-Verbose "Get current Active Directory domain... "
@@ -139,15 +115,15 @@ ForEach ($AllADSQLServerSPNsItem in $AllADSQLServerSPNs)
 ###
 Write-Verbose "Loop through the discovered MS SQL SPNs and build the report " 
 ###
-$ALLSQLServerReport = $NULL
-$AllMSSQLServerFQDNs = $NULL
+$ALLSQLServerReport = @()
+#$AllMSSQLServerFQDNs = $NULL
 ForEach ($AllMSSQLSPNsItem in $AllMSSQLSPNHashTable.GetEnumerator())
     {
         $AllMSSQLSPNsItemServerDomainName = $NULL
         $AllMSSQLSPNsItemServerDomainDN = $NULL
 
         $AllMSSQLSPNsItemServerFQDN =  $AllMSSQLSPNsItem.Name
-        [array]$AllMSSQLServerFQDNs += $AllMSSQLSPNsItemServerFQDN
+        #[array]$AllMSSQLServerFQDNs += $AllMSSQLSPNsItemServerFQDN
         $AllMSSQLSPNsItemInstancePortArray = ($AllMSSQLSPNsItem.Value) -Split(';')
 
         $AllMSSQLSPNsItemServerFQDNArray = $AllMSSQLSPNsItemServerFQDN -Split('\.')
@@ -173,7 +149,7 @@ ForEach ($AllMSSQLSPNsItem in $AllMSSQLSPNHashTable.GetEnumerator())
                 $AllMSSQLSPNsItemServerPort = $NULL
                 $AllMSSQLSPNsItemServerInstance = $NULL
 
-                $SQLServerReport = New-Object -TypeName PSObject 
+                $SQLServerReport = New-Object -TypeName System.Object 
                 $SQLServerReport | Add-Member -MemberType NoteProperty -Name Domain -Value $AllMSSQLSPNsItemServerDomainName
                 $SQLServerReport | Add-Member -MemberType NoteProperty -Name ServerName -Value $AllMSSQLSPNsItemServerFQDN
 
@@ -194,21 +170,16 @@ ForEach ($AllMSSQLSPNsItem in $AllMSSQLSPNHashTable.GetEnumerator())
                                 $ADComputerSearch.PageSize = 500
                                 $ADComputerSearch.Filter = "(&(objectCategory=Computer)(name=$AllMSSQLSPNsItemServerName))"
                                 $ComputerADInfo = $ADComputerSearch.FindAll()
-                        
-                                [string]$ComputerADDescription = ($ComputerADInfo.properties.description)
-                                [string]$ComputerADInfoOperatingSystem = ($ComputerADInfo.properties.operatingsystem)
-                                [string]$ComputerADInfoOperatingSystemServicePack = ($ComputerADInfo.properties.operatingsystemservicepack)
-                                [string]$ComputerADInfoOperatingSystemVersion = ($ComputerADInfo.properties.operatingsystemversion)
 
                                 [string]$ComputerADInfoLastLogonTimestamp = ($ComputerADInfo.properties.lastlogontimestamp)
                                 TRY { [datetime]$ComputerADInfoLLT = [datetime]::FromFileTime($ComputerADInfoLastLogonTimestamp) }
                                     CATCH { }
                         
-                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name OperatingSystem -Value $ComputerADInfoOperatingSystem 
-                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name OSServicePack -Value $ComputerADInfoOperatingSystemServicePack 
+                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name OperatingSystem -Value ($ComputerADInfo.properties.operatingsystem)
+                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name OSServicePack -Value ($ComputerADInfo.properties.operatingsystemservicepack)
                                 $SQLServerReport | Add-Member -MemberType NoteProperty -Name LastBootup -Value $ComputerADInfoLLT  
-                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name OSVersion -Value $ComputerADInfoOperatingSystemVersion 
-                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name Description -Value $ComputerADDescription
+                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name OSVersion -Value ($ComputerADInfo.properties.operatingsystemversion)
+                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name Description -Value ($ComputerADInfo.properties.description)
                             }
                         CATCH { Write-Warning "Unable to gather properties for computer $AllMSSQLSPNsItemServerName" } 
                    }
@@ -217,14 +188,6 @@ ForEach ($AllMSSQLSPNsItem in $AllMSSQLSPNHashTable.GetEnumerator())
             }
     } 
 
-IF ($GroupResults)
-    { $ALLSQLServerReport | Sort-Object $SortResults  | Format-Table -GroupBy $GroupResults -AutoSize }
- ELSE
-    { $ALLSQLServerReport | Sort-Object $SortResults  | Format-Table -AutoSize }
-
-$AllMSSQLServerFQDNs = $AllMSSQLServerFQDNs | sort-object -Unique
-$AllMSSQLServerFQDNsCount = $AllMSSQLServerFQDNs.Count
-Write-Output " "
-Write-Output "Discovered $AllMSSQLServerFQDNsCount servers running MS SQL `r "
+return $ALLSQLServerReport
 
 } 
