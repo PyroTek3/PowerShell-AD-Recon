@@ -5,7 +5,6 @@ function Discover-PSMSSQLServers
 .SYNOPSIS
 This script is used to discover Microsoft SQL servers without port scanning.
 SQL discovery in the Active Directory Forest is performed by querying an Active Directory Gloabl Catalog via LDAP.
-The script can also provide additional computer information such as OS and last bootup time.
 
 PowerSploit Function: Discover-PSMSSQLServers
 Author: Sean Metcalf, Twitter: @PyroTek3
@@ -13,29 +12,20 @@ License: BSD 3-Clause
 Required Dependencies: None
 Optional Dependencies: None
 
-Version: 1.5
+Version: 1.6
 
 .DESCRIPTION
 This script is used to discover Microsoft SQL servers in the Active Directory Forest.
-The script can also provide additional computer information such as OS and last bootup time.
 
 Currently, the script performs the following actions:
     * Queries a Global Catalog in the Active Directory root domain for all Microsoft SQL SPNs in the forest
     * Displays the Microsoft SQL server FQDNs ports and instances
-    * Also displays additional computer information if ExtendedInfo is enabled.
 
 REQUIRES: Active Directory user authentication. Standard user access is fine - admin access is not necessary.
-
-.PARAMETER ExtendedInfo
-Switch: Displays additional information including Operating System, Last Bootup Time (derived from LastLogonTimeStamp), OS Version, and Description.
-Operating system properties are populated at first bot-up after joining the domain. 
 
 .EXAMPLE
 Discover-PSMSSQLServers
 Perform Microsoft SQL Server discovery via AD and displays the results in a table.
-
-Discover-PSMSSQLServers -ExtendedInfo
-Perform Microsoft SQL Server discovery via AD (includes additional computer information) and displays the results in a table.
 
 .NOTES
 This script is used to discover Microsoft SQL servers in the Active Directory Forest and can also provide additional computer information such as OS and last bootup time.
@@ -45,8 +35,7 @@ This script is used to discover Microsoft SQL servers in the Active Directory Fo
 #>
 Param
     (
-        [Parameter(Position=0)]
-        [switch] $ExtendedInfo = $True
+
     )
 
 Write-Verbose "Get current Active Directory domain... "
@@ -161,28 +150,29 @@ ForEach ($AllMSSQLSPNsItem in $AllMSSQLSPNHashTable.GetEnumerator())
                 $SQLServerReport | Add-Member -MemberType NoteProperty -Name Port -Value $AllMSSQLSPNsItemServerPort
                 $SQLServerReport | Add-Member -MemberType NoteProperty -Name Instance -Value $AllMSSQLSPNsItemServerInstance
 
-                IF ($ExtendedInfo -eq $True)
+                TRY
                     {
-                        TRY
-                            {
-                                $ADComputerSearch = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
-                                $ADComputerSearch.SearchRoot = $AllMSSQLSPNsItemServerDomainLDAPDN
-                                $ADComputerSearch.PageSize = 500
-                                $ADComputerSearch.Filter = "(&(objectCategory=Computer)(name=$AllMSSQLSPNsItemServerName))"
-                                $ComputerADInfo = $ADComputerSearch.FindAll()
-
-                                [string]$ComputerADInfoLastLogonTimestamp = ($ComputerADInfo.properties.lastlogontimestamp)
-                                TRY { [datetime]$ComputerADInfoLLT = [datetime]::FromFileTime($ComputerADInfoLastLogonTimestamp) }
-                                    CATCH { }
+                        $ADComputerSearch = New-Object DirectoryServices.DirectorySearcher([ADSI]"")
+                        $ADComputerSearch.SearchRoot = $AllMSSQLSPNsItemServerDomainLDAPDN
+                        $ADComputerSearch.PageSize = 500
+                        $ADComputerSearch.Filter = "(&(objectCategory=Computer)(name=$AllMSSQLSPNsItemServerName))"
+                        $ADComputerSearchInfo = $ADComputerSearch.FindAll()
                         
-                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name OperatingSystem -Value ($ComputerADInfo.properties.operatingsystem)
-                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name OSServicePack -Value ($ComputerADInfo.properties.operatingsystemservicepack)
-                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name LastBootup -Value $ComputerADInfoLLT  
-                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name OSVersion -Value ($ComputerADInfo.properties.operatingsystemversion)
-                                $SQLServerReport | Add-Member -MemberType NoteProperty -Name Description -Value ($ComputerADInfo.properties.description)
-                            }
-                        CATCH { Write-Warning "Unable to gather properties for computer $AllMSSQLSPNsItemServerName" } 
-                   }
+                        [string]$ComputerADInfoLastLogonTimestamp = ($ADComputerSearchInfo[0].properties.lastlogontimestamp)
+                        TRY { [datetime]$ComputerADInfoLLT = [datetime]::FromFileTime($ComputerADInfoLastLogonTimestamp) }
+                            CATCH { }
+                        
+                        $ComputerADInfo.Values
+                        
+                        #$Name = $Result.Properties.Item("sAMAccOUntnAme")
+                        $SQLServerReport | Add-Member -MemberType NoteProperty -Name OperatingSystem -Value ($ADComputerSearchInfo[0].properties.operatingsystem)
+                        $SQLServerReport | Add-Member -MemberType NoteProperty -Name OSServicePack -Value ($ADComputerSearchInfo[0].properties.operatingsystemservicepack)
+                        $SQLServerReport | Add-Member -MemberType NoteProperty -Name LastBootup -Value $ComputerADInfoLLT  
+                        $SQLServerReport | Add-Member -MemberType NoteProperty -Name OSVersion -Value ($ADComputerSearchInfo[0].properties.operatingsystemversion)
+                        $SQLServerReport | Add-Member -MemberType NoteProperty -Name Description -Value ($ADComputerSearchInfo[0].properties.description)
+                    }
+                  CATCH { } 
+
 
                 [array]$ALLSQLServerReport += $SQLServerReport
             }
