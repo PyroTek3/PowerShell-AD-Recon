@@ -7,37 +7,31 @@ This script is used to discover network servers with interesting services withou
 Service discovery in the Active Directory Forest is performed by querying an Active Directory Gloabl Catalog via LDAP.
 The script can also provide additional computer information such as OS and last bootup time.
 
-PowerSploit Function: DDiscover-PSInterestingServices.ps1
+PowerSploit Function: Discover-PSInterestingServices
 Author: Sean Metcalf, Twitter: @PyroTek3
 License: BSD 3-Clause
 Required Dependencies: None
 Optional Dependencies: None
 
-Version: 1.3
+Version: 1.5
 
 .DESCRIPTION
 This script is used to discover network servers with interesting services without port scanning.
-Service discovery in the Active Directory Forest is performed by querying an Active Directory Gloabl Catalog via LDAP.
-The script can also provide additional computer information such as OS and last bootup time.
+Service discovery in the Active Directory Forest is performed by querying an Active Directory Gloabl Catalog via ADSI.
 
 REQUIRES: Active Directory user authentication. Standard user access is fine - admin access is not necessary.
 
 Currently, the script performs the following actions:
     * Queries a Global Catalog in the Active Directory root domain for all SPNs in the forest
     * Identifies interesting services running on computers (if a port is identified in the SPN, it is shown in the report as SPN.port)
-    * Also displays additional computer information if ExtendedInfo is enabled.
 
-A description of SPN Services can be found here:
-http://blog.metcorp.org/?page_id=183 
+A description of SPN Service Types can be found here:
+http://adsecurity.org/?page_id=183 
 
-.PARAMETER ExtendedInfo
-Switch: Displays additional information including OS Version & OS (short name) in standard report.
-When using the ServiceSearch parameter, displays additional information including Operating System, Last Bootup Time (derived from LastLogonTimeStamp), OS Version, and Description.
-Operating system properties are populated at first bot-up after joining the domain. 
 
 .PARAMETER StandardSPNServiceFilter
-Array of Strings: Standard list of SPN Services Reported: "AGPM","DNS","ADAM","Exchange","GC","http","IMAP","kadmin","ldap","MSServerCluster","MSSQL","sip","SMTP","tapinego","TERMSRV","WSMAN"
-It is best to remove from this list. Use the OptionalSPNServiceFilter parameter for adding SPN Services to the report.
+Array of Strings: Standard list of SPN Services Reported: ("ADAM","AGPM","bo","CESREMOTE","Dfs","DNS","Exchange","FIMService","ftp","http","IMAP","ipp","iSCSITarget","kadmin","ldap","MS","sql","nfs","secshd","sip","SMTP","SoftGrid","TERMSRV","Virtual","vmrc","vnc","vpn","vssrvc","WSMAN","xmpp")
+It is best to remove from this list if needed. Use the OptionalSPNServiceFilter parameter for adding SPN Services to the report.
 
 .PARAMETER OptionalSPNServiceFilter
 Array of Strings: Provide additonal SPN service types desired in the report.
@@ -45,39 +39,48 @@ Multiple values are acceptable.
 
 .EXAMPLE
 Discover-PSInterestingServices
-Perform discovery on servers running interesting services via AD and displays the results in a table.
+Perform discovery on servers running interesting services via ADSI returning results in a custom PowerShell object.
+Discovers the following SPNs: ("ADAM","AGPM","bo","CESREMOTE","Dfs","DNS","Exchange","FIMService","ftp","http","IMAP","ipp","iSCSITarget","kadmin","ldap","MS","sql","nfs","secshd","sip","SMTP","SoftGrid","TERMSRV","Virtual","vmrc","vnc","vpn","vssrvc","WSMAN","xmpp")
 
-Discover-PSInterestingServices -ExtendedInfo
-Perform discovery on servers running interesting services via AD and displays the results in a table.
-Displays additional information including OS Version & OS (short name) in standard report.
+Discover-PSInterestingServices -GetAllForestSPNs
+Perform discovery of ALL SPN typs in Active Directory in order to discover servers running interesting services via ADSI returning results in a custom PowerShell object.
 
 Discover-PSInterestingServices -OptionalSPNServiceFilter ("Microsoft Virtual Console Service","Dfsr")
-Perform discovery on servers running interesting services (adding Hyper-V hosts and domain DFS servers) via AD and displays the results in a table.
+Perform discovery on servers running interesting services (adding Hyper-V hosts and domain DFS servers) via ADSI returning results in a custom PowerShell object.
 
 .NOTES
-This script is used to discover network servers with interesting services without port scanning.
+This script is used to discover computers with interesting services without port scanning.
 
 .LINK
+Blog: http://www.ADSecurity.org
+Github repo: https://github.com/PyroTek3/PowerShell-AD-Recon
 
 #>
+
+
 Param
     (
         [switch] $GetAllForestSPNs,
-        [String[]] $StandardSPNServiceFilter = ("ADAM","AGPM","bo","CESREMOTE","CmRcService","Dfs","DNS","Exchange","FIMService","ftp","GC","http","IMAP","ipp","iSCSITarget","kadmin","ldap","MS","MSSQL","nfs","NPPolicyEvaluator","NPRepository4","PCNSCLNT","PVSSoap","secshd","sip","SMTP","SoftGrid","SQLAgent","tapinego","TERMSRV","Virtual","vmrc","vnc","vpn","VProRecovery","vssrvc","WSMAN","xmpp")
+        [String[]] $StandardSPNServiceFilter = ("ADAM","AGPM","bo","CESREMOTE","Dfs","DNS","Exchange","FIMService","ftp","http","IMAP","ipp","iSCSITarget","kadmin","ldap","MS","sql","nfs","secshd","sip","SMTP","SoftGrid","TERMSRV","Virtual","vmrc","vnc","vpn","vssrvc","WSMAN","xmpp"),
+        [String[]] $OptionalSPNServiceFilter
     )
 
-[array]$SPNServiceFilter = $StandardSPNServiceFilter
+IF ($OptionalSPNServiceFilter)
+    { [array]$SPNServiceFilter = $StandardSPNServiceFilter + $OptionalSPNServiceFilter } 
+ ELSE
+    { [array]$SPNServiceFilter = $StandardSPNServiceFilter }
+
+Write-verbose "Build SPN searcher based on Standard and Optional "
+[string]$ADSearcherSPNTypes = "(|"
+ForEach ($SPNServiceFilterItem in $SPNServiceFilter)
+    { [string]$ADSearcherSPNTypes += "(serviceprincipalname=*$SPNServiceFilterItem*)" }
+[string]$ADSearcherSPNTypes += " )"
 
 Write-Verbose "Get current Active Directory domain... "
 $ADForestInfo = [System.DirectoryServices.ActiveDirectory.Forest]::GetCurrentForest()
 $ADForestInfoRootDomain = $ADForestInfo.RootDomain
 $ADForestInfoRootDomainArray = $ADForestInfoRootDomain -Split("\.")
-$ADForestInfoRootDomainDN = $Null
-ForEach($ADForestInfoRootDomainArrayItem in $ADForestInfoRootDomainArray)
-    {
-        $ADForestInfoRootDomainDN += "DC=" + $ADForestInfoRootDomainArrayItem + ","     
-    }
-$ADForestInfoRootDomainDN = $ADForestInfoRootDomainDN.Substring(0,$ADForestInfoRootDomainDN.Length-1)
+$ADForestInfoRootDomainDN = "DC=" + $ADForestInfoRootDomain -Replace("\.",',DC=')
 
 $ADDomainInfoLGCDN = 'GC://' + $ADForestInfoRootDomainDN
 
@@ -87,9 +90,7 @@ $root = [ADSI]$ADDomainInfoLGCDN
 IF ($GetAllForestSPNs -eq $True)
     { $ADSearcher = new-Object System.DirectoryServices.DirectorySearcher($root,"(serviceprincipalname=*)")  } 
   ELSE
-    { 
-        $ADSearcher = new-Object System.DirectoryServices.DirectorySearcher($root,"(|(serviceprincipalname=*ADAM*)(serviceprincipalname=AGPM*)(serviceprincipalname=bo*)(serviceprincipalname=CESREMOTE*)(serviceprincipalname=CmRcService*)(serviceprincipalname=Dfs*)(serviceprincipalname=DNS*)(serviceprincipalname=Exchange*)(serviceprincipalname=FIMService*)(serviceprincipalname=ftp*)(serviceprincipalname=GC*)(serviceprincipalname=http*)(serviceprincipalname=IMAP*)(serviceprincipalname=ipp*)(serviceprincipalname=iSCSITarget*)(serviceprincipalname=kadmin*)(serviceprincipalname=ldap*)(serviceprincipalname=MS*)(serviceprincipalname=nfs*)(serviceprincipalname=NPPolicyEvaluator*)(serviceprincipalname=NPRepository4*)(serviceprincipalname=PCNSCLNT*)(serviceprincipalname=PVSSoap*)(serviceprincipalname=secshd*)(serviceprincipalname=sip*)(serviceprincipalname=SMTP*)(serviceprincipalname=SoftGrid*)(serviceprincipalname=SQLAgent*)(serviceprincipalname=tapinego*)(serviceprincipalname=TERMSRV*)(serviceprincipalname=*Virtual*)(serviceprincipalname=vmrc*)(serviceprincipalname=vnc*)(serviceprincipalname=vpn*)(serviceprincipalname=VProRecovery*)(serviceprincipalname=vssrvc*)(serviceprincipalname=WSMAN*)(serviceprincipalname=xmpp*) )")  
-     }
+    { $ADSearcher = new-Object System.DirectoryServices.DirectorySearcher($root,"$ADSearcherSPNTypes") }
 
 $ADSearcher.PageSize = 1000
 $AllForestSPNs = $ADSearcher.FindAll() 
