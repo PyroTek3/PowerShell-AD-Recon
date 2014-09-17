@@ -4,7 +4,7 @@ function Discover-PSMSSQLServers
 <#
 .SYNOPSIS
 This script is used to discover Microsoft SQL servers without port scanning.
-SQL discovery in the Active Directory Forest is performed by querying an Active Directory Gloabl Catalog via LDAP.
+SQL discovery in the Active Directory Forest is performed by querying an Active Directory Gloabl Catalog via ADSI.
 
 PowerSploit Function: Discover-PSMSSQLServers
 Author: Sean Metcalf, Twitter: @PyroTek3
@@ -12,7 +12,7 @@ License: BSD 3-Clause
 Required Dependencies: None
 Optional Dependencies: None
 
-Version: 1.6
+Version: 1.7
 
 .DESCRIPTION
 This script is used to discover Microsoft SQL servers in the Active Directory Forest.
@@ -25,14 +25,18 @@ REQUIRES: Active Directory user authentication. Standard user access is fine - a
 
 .EXAMPLE
 Discover-PSMSSQLServers
-Perform Microsoft SQL Server discovery via AD and displays the results in a table.
+Perform Microsoft SQL Server discovery via AD and returns the results in a custom PowerShell object.
 
 .NOTES
 This script is used to discover Microsoft SQL servers in the Active Directory Forest and can also provide additional computer information such as OS and last bootup time.
 
 .LINK
+Blog: http://www.ADSecurity.org
+Github repo: https://github.com/PyroTek3/PowerShell-AD-Recon
+
 
 #>
+
 Param
     (
 
