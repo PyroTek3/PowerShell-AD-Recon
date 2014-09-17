@@ -41,13 +41,7 @@ Param
 Write-Verbose "Get current Active Directory domain... "
 $ADForestInfo = [System.DirectoryServices.ActiveDirectory.Forest]::GetCurrentForest()
 $ADForestInfoRootDomain = $ADForestInfo.RootDomain
-$ADForestInfoRootDomainArray = $ADForestInfoRootDomain -Split("\.")
-$ADForestInfoRootDomainDN = $Null
-ForEach($ADForestInfoRootDomainArrayItem in $ADForestInfoRootDomainArray)
-    {
-        $ADForestInfoRootDomainDN += "DC=" + $ADForestInfoRootDomainArrayItem + ","     
-    }
-$ADForestInfoRootDomainDN = $ADForestInfoRootDomainDN.Substring(0,$ADForestInfoRootDomainDN.Length-1)
+$ADForestInfoRootDomainDN = "DC=" + $ADForestInfoRootDomain -Replace("\.",',DC=')
 
 $ADDomainInfoLGCDN = 'GC://' + $ADForestInfoRootDomainDN
 
@@ -163,8 +157,7 @@ ForEach ($AllMSSQLSPNsItem in $AllMSSQLSPNHashTable.GetEnumerator())
                             CATCH { }
                         
                         $ComputerADInfo.Values
-                        
-                        #$Name = $Result.Properties.Item("sAMAccOUntnAme")
+
                         $SQLServerReport | Add-Member -MemberType NoteProperty -Name OperatingSystem -Value ($ADComputerSearchInfo[0].properties.operatingsystem)
                         $SQLServerReport | Add-Member -MemberType NoteProperty -Name OSServicePack -Value ($ADComputerSearchInfo[0].properties.operatingsystemservicepack)
                         $SQLServerReport | Add-Member -MemberType NoteProperty -Name LastBootup -Value $ComputerADInfoLLT  
