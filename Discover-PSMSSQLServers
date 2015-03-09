@@ -12,8 +12,8 @@ License: BSD 3-Clause
 Required Dependencies: None
 Optional Dependencies: None
 
-Last Updated: 1/03/2015
-Version: 2.2
+Last Updated: 2/04/2015
+Version: 2.3
 
 .DESCRIPTION
 This script is used to discover Microsoft SQL servers in the Active Directory Forest.
@@ -81,7 +81,7 @@ ForEach ($AllADSQLServerSPNsItem in $AllADSQLServerSPNs)
             {
                 IF ( ($ADSISQLServersItemSPN -like "MSSQL*") -AND ($ADSISQLServersItemSPN -like "*:*") )
                     { 
-                        IF ($AllADSQLServerSPNsItem.properties.objectcategory -like "CN=Person*")
+                        IF (($AllADSQLServerSPNsItem.properties.objectcategory -like "CN=Person*") -AND ($ADSISQLServersItemSPNServerFQDN) )
                             {
                                 $AllMSSQLServiceAccountHashTable.Set_Item($ADSISQLServersItemSPNServerFQDN,$AllADSQLServerSPNsItem.properties.distinguishedname)
                             }
@@ -143,6 +143,7 @@ ForEach ($AllMSSQLSPNsItem in $AllMSSQLSPNHashTable.GetEnumerator())
         $AllMSSQLSPNsItemServiceAccountDN = $AllMSSQLServiceAccountHashTable.Get_Item($AllMSSQLSPNsItemServerFQDN)
             IF ($AllMSSQLSPNsItemServiceAccountDN)
                 {
+                    $ADServiceAccountSearchInfo = @()
                     $AllMSSQLSPNsItemServiceAccountDNArray = $AllMSSQLSPNsItemServiceAccountDN -Split(",")
                     ForEach ($AllMSSQLSPNsItemServiceAccountDNArrayItem in $AllMSSQLSPNsItemServiceAccountDNArray)
                         {
@@ -160,18 +161,19 @@ ForEach ($AllMSSQLSPNsItem in $AllMSSQLSPNHashTable.GetEnumerator())
                     $ADServiceAccountSearch.Filter = "distinguishedname=$AllMSSQLSPNsItemServiceAccountDN"
                     $ADServiceAccountSearchInfo = $ADServiceAccountSearch.FindAll() 
                     
-                    
-                        
-                    [string]$ADServiceAccountSAMAccountName = $ADServiceAccountInfo[0].Properties.samaccountname
-                    [string]$ADServiceAccountdescription = $ADServiceAccountSearchInfo[0].Properties.description
-                    [string]$ADServiceAccountpwdlastset = $ADServiceAccountSearchInfo[0].Properties.pwdlastset
-                     [string]$ADServiceAccountPasswordLastSetDate = [datetime]::FromFileTimeUTC($ADServiceAccountpwdlastset)
-                    [string]$ADServiceAccountlastlogon = $ADServiceAccountSearchInfo[0].Properties.lastlogon
-                     [string]$ADServiceAccountLastLogonDate = [datetime]::FromFileTimeUTC($ADServiceAccountlastlogon)
+                    IF ($ADServiceAccountSearchInfo)
+                        {  
+                            [string]$ADServiceAccountSAMAccountName = $ADServiceAccountInfo[0].Properties.samaccountname
+                            [string]$ADServiceAccountdescription = $ADServiceAccountSearchInfo[0].Properties.description
+                            [string]$ADServiceAccountpwdlastset = $ADServiceAccountSearchInfo[0].Properties.pwdlastset
+                             [string]$ADServiceAccountPasswordLastSetDate = [datetime]::FromFileTimeUTC($ADServiceAccountpwdlastset)
+                            [string]$ADServiceAccountlastlogon = $ADServiceAccountSearchInfo[0].Properties.lastlogon
+                             [string]$ADServiceAccountLastLogonDate = [datetime]::FromFileTimeUTC($ADServiceAccountlastlogon)
 
-                     $ADServiceAccountadmincount = $ADServiceAccountSearchInfo[0].Properties.admincount
-                     
-                     [string]$ADServiceAccountDistinguishedName = $ADServiceAccountSearchInfo[0].Properties.distinguishedname
+                             $ADServiceAccountadmincount = $ADServiceAccountSearchInfo[0].Properties.admincount
+                             
+                             [string]$ADServiceAccountDistinguishedName = $ADServiceAccountSearchInfo[0].Properties.distinguishedname
+                        }
                     $ADServiceAccountLDAPDN = "LDAP://"+$ADServiceAccountDistinguishedName
                      $ADServiceAccountInfo = ([adsi] $ADServiceAccountLDAPDN)
                     
@@ -233,3 +235,4 @@ ForEach ($AllMSSQLSPNsItem in $AllMSSQLSPNHashTable.GetEnumerator())
 return $ALLSQLServerReport
 
 } 
+
